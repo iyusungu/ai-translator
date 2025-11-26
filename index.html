@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>中日口語翻譯</title>
+    <title>中日口語翻譯 (Stable)</title>
     <style>
         :root {
             --bg-color: #131314;
@@ -40,7 +40,9 @@
             border-bottom: 1px solid #222;
         }
 
+        #header-content { display: flex; flex-direction: column; align-items: flex-start; }
         #app-title { font-size: 18px; font-weight: 600; color: var(--text-color); opacity: 0.9; }
+        #model-status { font-size: 11px; color: #666; margin-top: 2px; }
 
         #api-key-btn {
             font-size: 13px;
@@ -228,13 +230,16 @@
 <body>
 
 <header>
-    <div id="app-title">AI Translator</div>
+    <div id="header-content">
+        <div id="app-title">AI Translator</div>
+        <div id="model-status">等待連線...</div>
+    </div>
     <button id="api-key-btn">Key</button>
 </header>
 
 <div id="chat-container">
     <div class="message-row ai-row">
-        <div class="ai-label">AI</div>
+        <div class="ai-label">Gemini</div>
         <div class="message ai-bubble">
             歡迎使用。<br>
             輸入中文 ➡ 日文 (有禮貌)<br>
@@ -260,8 +265,8 @@
 <div id="settings-modal">
     <div class="modal-content">
         <h3 style="color:#e3e3e3; margin:0 0 10px 0;">Settings</h3>
-        <p style="font-size: 13px; color: #888; margin:0;">Enter Groq API Key</p>
-        <input type="password" id="api-key-input" class="modal-input" placeholder="gsk_...">
+        <p style="font-size: 13px; color: #888; margin:0;">Google API Key (AIza...)</p>
+        <input type="password" id="api-key-input" class="modal-input" placeholder="AIza...">
         <button class="modal-save" id="save-key-btn">Confirm</button>
         <button onclick="document.getElementById('settings-modal').style.display='none'" style="margin-top:20px; background:transparent; color:#666; border:none; font-size:14px;">Cancel</button>
     </div>
@@ -273,10 +278,9 @@
     document.addEventListener('DOMContentLoaded', function() {
         let apiKey = "";
         let lastJapaneseText = ""; 
+        let currentModelName = ""; 
         
-        const MODEL_NAME = "llama-3.3-70b-versatile"; 
-
-        try { apiKey = localStorage.getItem("groq_api_key") || ""; } catch (e) {}
+        try { apiKey = localStorage.getItem("google_api_key") || ""; } catch (e) {}
 
         const modal = document.getElementById('settings-modal');
         const apiKeyInput = document.getElementById('api-key-input');
@@ -285,6 +289,7 @@
         const actionButtons = document.getElementById('action-buttons');
         const btnFurigana = document.getElementById('btn-furigana');
         const btnGrammar = document.getElementById('btn-grammar');
+        const modelStatus = document.getElementById('model-status');
         
         document.getElementById('api-key-btn').addEventListener('click', function() {
             modal.style.display = 'flex';
@@ -295,8 +300,10 @@
             const val = apiKeyInput.value.trim();
             if (val) {
                 apiKey = val;
-                try { localStorage.setItem("groq_api_key", apiKey); } catch(e){}
+                currentModelName = ""; 
+                try { localStorage.setItem("google_api_key", apiKey); } catch(e){}
                 modal.style.display = 'none';
+                modelStatus.innerText = "Key 已更新";
             } else {
                 alert("Please enter API Key");
             }
@@ -309,6 +316,64 @@
 
         if (!apiKey) setTimeout(() => { modal.style.display = 'flex'; }, 500);
 
+        // 🌟 核心修正：嚴格過濾模型 🌟
+        async function detectBestModel() {
+            if (currentModelName) return currentModelName;
+
+            modelStatus.innerText = "搜尋穩定版模型...";
+            
+            try {
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+                const data = await response.json();
+
+                if (data.error) {
+                    modelStatus.innerText = "Error: " + data.error.message;
+                    return null;
+                }
+
+                if (!data.models) {
+                    modelStatus.innerText = "Error: 無模型清單";
+                    return null;
+                }
+
+                // 🌟 過濾邏輯大升級 🌟
+                // 1. 必須包含 gemini
+                // 2. 必須支援 generateContent
+                // 3. 絕對排除 "exp" (實驗版，導致 429 的元兇)
+                // 4. 絕對排除 "2.5" (如果還沒開放也會導致 429)
+                const candidates = data.models.filter(m => 
+                    m.name.includes("gemini") && 
+                    m.supportedGenerationMethods.includes("generateContent") &&
+                    !m.name.includes("exp") && 
+                    !m.name.includes("2.5")
+                );
+
+                // 優先尋找 1.5-flash 的最新穩定版
+                let bestModel = candidates.find(m => m.name.includes("gemini-1.5-flash-latest"));
+                if (!bestModel) bestModel = candidates.find(m => m.name.includes("gemini-1.5-flash-001"));
+                if (!bestModel) bestModel = candidates.find(m => m.name.includes("gemini-1.5-flash"));
+                
+                // 次選 1.5-pro
+                if (!bestModel) bestModel = candidates.find(m => m.name.includes("gemini-1.5-pro"));
+                
+                // 最後備案
+                if (!bestModel && candidates.length > 0) bestModel = candidates[0];
+
+                if (bestModel) {
+                    currentModelName = bestModel.name.replace("models/", "");
+                    modelStatus.innerText = `已連線: ${currentModelName}`;
+                    return currentModelName;
+                } else {
+                    modelStatus.innerText = "無可用穩定模型";
+                    return null;
+                }
+
+            } catch (e) {
+                modelStatus.innerText = "連線失敗";
+                return null;
+            }
+        }
+
         async function sendMessage() {
             const text = messageInput.value.trim();
             if (!text) return;
@@ -319,35 +384,33 @@
             toggleActionButtons(false); 
             loading(true);
 
-            // 若輸入為日文，先儲存供按鈕使用
             if (containsJapanese(text)) {
                 lastJapaneseText = text;
                 updateActionButtonsState();
             }
 
-            // 🌟 修正後的 System Prompt：強調雙向邏輯 🌟
-            const systemPrompt = `
-你是一個專業的中日口譯員。請嚴格遵守以下規則：
+            const model = await detectBestModel();
+            if (!model) {
+                addMessage("❌ 無法找到可用的模型 (已排除實驗版)。", "ai");
+                loading(false);
+                return;
+            }
 
-1. **語言方向判斷**：
-   - 若使用者輸入【中文】：請翻譯成「有禮貌、自然的日文口語 (丁寧語/Desu-Masu)」。
-   - 若使用者輸入【日文】：請翻譯成「繁體中文 (台灣口語)」。
-
-2. **日文語氣控制 (針對中翻日)**：
-   - **禁止濫用「ね (ne)」**：不要每句結尾都加「ね」。請混合使用「～ます」、「～です」、「～ますよ」或斷定句。
-   - 保持成年人的禮貌距離感，避免過於幼稚或過於隨便。
-
-3. **輸出規則**：
-   - 只回傳翻譯結果，不要任何解釋。
+            const systemInstructions = `
+你是一個中日翻譯助手。規則：
+1. **中文輸入**：翻譯成「有禮貌、自然的日文口語 (丁寧語)」。
+2. **日文輸入**：翻譯成「繁體中文 (台灣口語)」。
+3. **語氣**：禁止濫用「ね (ne)」，保持成年人的禮貌距離感。
+4. **輸出**：只回傳翻譯結果。
             `;
-            
-            const result = await callGroqAPI(systemPrompt, text);
+            const finalPrompt = systemInstructions + "\n\n----------------\n\n使用者輸入：" + text;
+
+            const result = await callGeminiAPI(model, finalPrompt);
             loading(false);
             toggleActionButtons(true);
 
             if (result) {
                 addMessage(result, "ai");
-                // 若翻譯結果為日文 (中翻日)，儲存供按鈕使用
                 if (containsJapanese(result)) {
                     lastJapaneseText = result;
                 }
@@ -357,10 +420,13 @@
 
         async function requestFurigana() {
             if (!lastJapaneseText) return;
+            const model = await detectBestModel();
+            if (!model) return;
+
             toggleActionButtons(false);
             const loadingId = addLoadingNote("假名標註中...");
             const prompt = `請將這句日文標註假名 (Furigana)，格式使用括號，例如：私(わたし)。句子：${lastJapaneseText}`;
-            const result = await callGroqAPI("你是一個日文老師。", prompt);
+            const result = await callGeminiAPI(model, prompt);
             removeLoadingNote(loadingId);
             toggleActionButtons(true);
             if (result) addNote("假名標註", result);
@@ -368,41 +434,46 @@
 
         async function requestGrammar() {
             if (!lastJapaneseText) return;
+            const model = await detectBestModel();
+            if (!model) return;
+
             toggleActionButtons(false);
             const loadingId = addLoadingNote("文法分析中...");
             const prompt = `請以繁體中文，簡單扼要地解說這句日文的文法重點與語氣。句子：${lastJapaneseText}`;
-            const result = await callGroqAPI("你是一個日文老師。", prompt);
+            const result = await callGeminiAPI(model, prompt);
             removeLoadingNote(loadingId);
             toggleActionButtons(true);
             if (result) addNote("文法解說", markdownToHtml(result));
         }
 
-        async function callGroqAPI(sys, user) {
-            const url = "https://api.groq.com/openai/v1/chat/completions";
+        async function callGeminiAPI(model, userMessage) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+            
             try {
                 const response = await fetch(url, {
                     method: "POST",
-                    headers: { 
-                        "Content-Type": "application/json",
-                        "Authorization": `Bearer ${apiKey}`
-                    },
-                    body: JSON.stringify({ 
-                        model: MODEL_NAME,
-                        messages: [
-                            { role: "system", content: sys },
-                            { role: "user", content: user }
-                        ],
-                        temperature: 0.6
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        contents: [{
+                            role: "user",
+                            parts: [{ text: userMessage }]
+                        }]
                     })
                 });
+                
                 const data = await response.json();
+                
                 if (data.error) {
                     addMessage(`API Error: ${data.error.message}`, "ai");
                     return null;
                 }
-                return data.choices[0].message.content;
+                
+                if (data.candidates && data.candidates[0].content) {
+                    return data.candidates[0].content.parts[0].text;
+                }
+                return null;
             } catch (e) {
-                addMessage("Connection Failed", "ai");
+                addMessage("Connection Failed: " + e.message, "ai");
                 return null;
             }
         }
@@ -410,14 +481,12 @@
         function addMessage(text, role) {
             const row = document.createElement("div");
             row.className = `message-row ${role}-row`;
-            
             let htmlContent = "";
             if (role === "ai") {
-                htmlContent = `<div class="ai-label">AI</div><div class="message ai-bubble">${text.replace(/\n/g, "<br>")}</div>`;
+                htmlContent = `<div class="ai-label">Gemini</div><div class="message ai-bubble">${text.replace(/\n/g, "<br>")}</div>`;
             } else {
                 htmlContent = `<div class="message user-bubble">${text.replace(/\n/g, "<br>")}</div>`;
             }
-            
             row.innerHTML = htmlContent;
             chatContainer.appendChild(row);
             chatContainer.scrollTop = chatContainer.scrollHeight;
@@ -427,7 +496,7 @@
             const row = document.createElement("div");
             row.className = "message-row ai-row";
             row.innerHTML = `
-                <div class="ai-label">AI Helper</div>
+                <div class="ai-label">Helper</div>
                 <div class="system-note">
                     <div class="note-title">${title}</div>
                     <div>${text}</div>
@@ -442,10 +511,8 @@
             row.id = id;
             row.className = "message-row ai-row";
             row.innerHTML = `
-                <div class="ai-label">AI Helper</div>
-                <div class="system-note" style="color:#666; border-color:#333;">
-                    <div>${text}</div>
-                </div>`;
+                <div class="ai-label">Gemini</div>
+                <div class="system-note" style="color:#666; border-color:#333;"><div>${text}</div></div>`;
             chatContainer.appendChild(row);
             chatContainer.scrollTop = chatContainer.scrollHeight;
             return id;
@@ -457,11 +524,8 @@
         }
 
         function updateActionButtonsState() {
-            if (lastJapaneseText) {
-                actionButtons.classList.add("visible");
-            } else {
-                actionButtons.classList.remove("visible");
-            }
+            if (lastJapaneseText) actionButtons.classList.add("visible");
+            else actionButtons.classList.remove("visible");
         }
 
         function toggleActionButtons(enable) {
