@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>中日口語翻譯 (Modern)</title>
+    <style>
+        :root {
+            /* 現代極簡深色主題 */
+            --bg-color: #131314;       /* Gemini 深色背景 */
+            --header-bg: #131314;
+            --user-bubble: #2d2e30;    /* 使用者氣泡：深灰 */
+            --text-color: #e3e3e3;     /* 主文字：柔白 */
+            --sub-text: #9ca0a6;       /* 次要文字 */
+            --input-bg: #1e1f20;       /* 輸入框背景 */
+            --accent-color: #ffffff;   /* 强调色 */
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            /* 讓字體更細緻 */
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* 頂部導航 - 極簡隱藏式 */
+        header {
+            background-color: var(--header-bg);
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 9999;
+        }
+
+        #app-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-color);
+            opacity: 0.9;
+        }
+
+        #api-key-btn {
+            font-size: 13px;
+            background: transparent;
+            border: 1px solid #444;
+            color: var(--sub-text);
+            padding: 6px 12px;
+            border-radius: 20px; /* 圓角按鈕 */
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        #api-key-btn:active { background: #333; }
+
+        /* 聊天區域 */
+        #chat-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px; /* 增加間距，更有呼吸感 */
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .message-row {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+        }
+
+        /* 訊息本體 */
+        .message {
+            max-width: 88%;
+            line-height: 1.6;
+            font-size: 16px;
+            position: relative;
+            word-wrap: break-word;
+        }
+
+        /* 使用者：右側，圓角氣泡 */
+        .user-row { align-items: flex-end; }
+        .user-bubble {
+            background-color: var(--user-bubble);
+            color: var(--text-color);
+            padding: 12px 20px;
+            border-radius: 24px; /* 大圓角 */
+            border-bottom-right-radius: 4px; /* 小尾巴 */
+        }
+
+        /* AI：左側，模仿 Gemini/ChatGPT 的無框風格 */
+        .ai-row { align-items: flex-start; }
+        .ai-bubble {
+            background-color: transparent; /* 透明背景 */
+            color: var(--text-color);
+            padding: 0 5px; /* 不需要太多 padding */
+            border-radius: 0;
+        }
+        
+        /* AI 名稱標示 (可選，增加辨識度) */
+        .ai-label {
+            font-size: 12px;
+            color: var(--sub-text);
+            margin-bottom: 4px;
+            margin-left: 5px;
+            font-weight: 600;
+        }
+
+        /* 系統/文法筆記 - 保持乾淨的卡片 */
+        .system-note, .furigana-note {
+            align-self: flex-start;
+            background-color: #1e1f20;
+            border-radius: 16px;
+            font-size: 15px;
+            color: #d1d1d1;
+            padding: 16px;
+            margin-top: 5px;
+            border: 1px solid #333;
+            width: 90%;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .note-title {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: bold;
+        }
+
+        /* 功能按鈕區 (Chips 風格) */
+        #action-buttons {
+            display: none;
+            padding: 0 20px 10px 20px;
+            gap: 10px;
+            justify-content: flex-start; /* 靠左排列 */
+            overflow-x: auto; /* 若按鈕多可滑動 */
+        }
+
+        .action-btn {
+            padding: 8px 16px;
+            background-color: #1e1f20;
+            border: 1px solid #444;
+            border-radius: 20px; /* 藥丸形狀 */
+            color: #e3e3e3;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+        .action-btn:active {
+            background-color: #333;
+            transform: scale(0.96);
+        }
+
+        /* 輸入區 - 懸浮式設計 */
+        #input-area-wrapper {
+            background-color: var(--bg-color);
+            padding: 10px 15px;
+            padding-bottom: max(15px, env(safe-area-inset-bottom));
+            z-index: 100;
+        }
+
+        #input-area {
+            background-color: var(--input-bg);
+            border-radius: 30px; /* 完整的膠囊狀 */
+            display: flex;
+            align-items: center;
+            padding: 6px 6px 6px 20px;
+            border: 1px solid #333;
+            transition: border 0.2s;
+        }
+        #input-area:focus-within {
+            border-color: #555;
+        }
+
+        #message-input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: white;
+            font-size: 16px;
+            outline: none;
+            height: 24px;
+            padding: 10px 0;
+        }
+        #message-input::placeholder { color: #666; }
+
+        #send-btn {
+            background-color: #e3e3e3;
+            color: #000;
+            border: none;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        #send-btn svg { width: 20px; height: 20px; fill: black; }
+        #send-btn:disabled { opacity: 0.3; }
+
+        /* 設定彈窗 - 現代毛玻璃感 */
+        #settings-modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8);
+            backdrop-filter: blur(5px);
+            z-index: 10000;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-content {
+            background: #1e1f20;
+            padding: 30px;
+            border-radius: 24px;
+            width: 80%;
+            max-width: 320px;
+            text-align: center;
+            border: 1px solid #333;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        .modal-input {
+            width: 90%;
+            padding: 14px;
+            margin: 20px 0;
+            border-radius: 12px;
+            border: 1px solid #444;
+            background: #131314;
+            color: white;
+            font-size: 16px;
+            outline: none;
+        }
+        .modal-input:focus { border-color: #777; }
+        .modal-save {
+            background: #e3e3e3;
+            color: black;
+            padding: 14px;
+            border: none;
+            border-radius: 12px;
+            font-weight: 600;
+            width: 100%;
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <div id="app-title">AI Translator</div>
+    <button id="api-key-btn">API Key</button>
+</header>
+
+<div id="chat-container">
+    <div class="message-row ai-row">
+        <div class="ai-label">AI</div>
+        <div class="message ai-bubble">
+            歡迎使用。我是您的隨身口譯員。<br>
+            請輸入中文或日文，我會用最自然的語氣為您翻譯。
+        </div>
+    </div>
+</div>
+
+<div id="action-buttons">
+    <button class="action-btn" id="btn-furigana">顯示假名</button>
+    <button class="action-btn" id="btn-grammar">文法解說</button>
+</div>
+
+<div id="input-area-wrapper">
+    <div id="input-area">
+        <input type="text" id="message-input" placeholder="輸入訊息..." autocomplete="off">
+        <button id="send-btn">
+            <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
+        </button>
+    </div>
+</div>
+
+<div id="settings-modal">
+    <div class="modal-content">
+        <h3 style="color:#e3e3e3; margin:0 0 10px 0;">Settings</h3>
+        <p style="font-size: 13px; color: #888; margin:0;">Enter your Groq API Key</p>
+        <input type="password" id="api-key-input" class="modal-input" placeholder="gsk_...">
+        <button class="modal-save" id="save-key-btn">Confirm</button>
+        <button onclick="document.getElementById('settings-modal').style.display='none'" style="margin-top:20px; background:transparent; color:#666; border:none; font-size:14px;">Cancel</button>
+    </div>
+</div>
+
+<script>
+    window.onerror = function(msg, url, line) { alert("Error: " + msg); return false; };
+
+    document.addEventListener('DOMContentLoaded', function() {
+        let apiKey = "";
+        let lastJapaneseText = "";
+        
+        const MODEL_NAME = "llama-3.3-70b-versatile"; 
+
+        try { apiKey = localStorage.getItem("groq_api_key") || ""; } catch (e) {}
+
+        const modal = document.getElementById('settings-modal');
+        const apiKeyInput = document.getElementById('api-key-input');
+        const chatContainer = document.getElementById('chat-container');
+        const messageInput = document.getElementById('message-input');
+        const actionButtons = document.getElementById('action-buttons');
+        
+        document.getElementById('api-key-btn').addEventListener('click', function() {
+            modal.style.display = 'flex';
+            apiKeyInput.value = apiKey;
+        });
+
+        document.getElementById('save-key-btn').addEventListener('click', function() {
+            const val = apiKeyInput.value.trim();
+            if (val) {
+                apiKey = val;
+                try { localStorage.setItem("groq_api_key", apiKey); } catch(e){}
+                modal.style.display = 'none';
+            } else {
+                alert("Please enter API Key");
+            }
+        });
+
+        document.getElementById('send-btn').addEventListener('click', sendMessage);
+        messageInput.addEventListener('keypress', function(e) { if (e.key === 'Enter') sendMessage(); });
+        document.getElementById('btn-furigana').addEventListener('click', requestFurigana);
+        document.getElementById('btn-grammar').addEventListener('click', requestGrammar);
+
+        if (!apiKey) setTimeout(() => { modal.style.display = 'flex'; }, 500);
+
+        async function sendMessage() {
+            const text = messageInput.value.trim();
+            if (!text) return;
+            if (!apiKey) { alert("請先設定 API Key"); modal.style.display = 'flex'; return; }
+
+            // 顯示使用者訊息
+            addMessage(text, "user");
+            messageInput.value = "";
+            hideActions();
+            loading(true);
+
+            // 🌟 修正後的 Prompt：明確禁止濫用「ね」 🌟
+            const systemPrompt = `
+你是一個專業的中日口譯員。
+
+【核心指令】
+將對話翻譯成「有禮貌、成熟且自然的口語（丁寧語）」。
+
+【重要：語氣控制】
+1. **禁止濫用「ね (ne)」**：
+   - 不要每一句話結尾都加「ね」、「ですね」或「ますね」。這聽起來非常幼稚且不自然。
+   - 請多使用「～ます」、「～です」、「～ますよ」、「～でしょうか」或單純的斷定句。
+   - 保持句尾的「多樣性」。
+
+2. **有禮貌的距離感**：
+   - 使用 Desu/Masu 形 (丁寧語)。
+   - 避免太隨便的タメ口 (如：食べる？)，也避免太僵硬的書面語。
+
+【翻譯方向】
+- 中文 -> 日文：翻譯成日本人成年人之間得體的對話。
+- 日文 -> 中文：翻譯成台灣口語。
+
+【輸出規則】
+- 只回傳翻譯結果，不要解釋。
+            `;
+            
+            const result = await callGroqAPI(systemPrompt, text);
+            loading(false);
+
+            if (result) {
+                addMessage(result, "ai");
+                if (containsJapanese(result)) {
+                    lastJapaneseText = result;
+                    showActions();
+                } else {
+                    lastJapaneseText = "";
+                }
+            }
+        }
+
+        async function requestFurigana() {
+            if (!lastJapaneseText) return;
+            hideActions(); 
+            loading(true);
+            const prompt = `請將這句日文標註假名 (Furigana)，格式使用括號，例如：私(わたし)。句子：${lastJapaneseText}`;
+            const result = await callGroqAPI("你是一個日文老師。", prompt);
+            loading(false);
+            if (result) addNote("假名標註", result);
+        }
+
+        async function requestGrammar() {
+            if (!lastJapaneseText) return;
+            hideActions();
+            loading(true);
+            const prompt = `請以繁體中文，簡單扼要地解說這句日文的文法重點與語氣。句子：${lastJapaneseText}`;
+            const result = await callGroqAPI("你是一個日文老師。", prompt);
+            loading(false);
+            if (result) addNote("文法解說", markdownToHtml(result));
+        }
+
+        async function callGroqAPI(sys, user) {
+            const url = "https://api.groq.com/openai/v1/chat/completions";
+            try {
+                const response = await fetch(url, {
+                    method: "POST",
+                    headers: { 
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${apiKey}`
+                    },
+                    body: JSON.stringify({ 
+                        model: MODEL_NAME,
+                        messages: [
+                            { role: "system", content: sys },
+                            { role: "user", content: user }
+                        ],
+                        temperature: 0.6
+                    })
+                });
+                const data = await response.json();
+                if (data.error) {
+                    addMessage(`API Error: ${data.error.message}`, "ai");
+                    return null;
+                }
+                return data.choices[0].message.content;
+            } catch (e) {
+                addMessage("Connection Failed", "ai");
+                return null;
+            }
+        }
+
+        // 新增訊息 (User / AI 分流)
+        function addMessage(text, role) {
+            const row = document.createElement("div");
+            row.className = `message-row ${role}-row`;
+            
+            let htmlContent = "";
+            if (role === "ai") {
+                htmlContent = `<div class="ai-label">AI</div><div class="message ai-bubble">${text.replace(/\n/g, "<br>")}</div>`;
+            } else {
+                htmlContent = `<div class="message user-bubble">${text.replace(/\n/g, "<br>")}</div>`;
+            }
+            
+            row.innerHTML = htmlContent;
+            chatContainer.appendChild(row);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        // 新增筆記 (文法/假名)
+        function addNote(title, text) {
+            const row = document.createElement("div");
+            row.className = "message-row ai-row";
+            row.innerHTML = `
+                <div class="ai-label">AI Helper</div>
+                <div class="system-note">
+                    <div class="note-title">${title}</div>
+                    <div>${text}</div>
+                </div>`;
+            chatContainer.appendChild(row);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function showActions() { actionButtons.style.display = "flex"; chatContainer.scrollTop = chatContainer.scrollHeight; }
+        function hideActions() { actionButtons.style.display = "none"; }
+        function loading(isLoading) {
+            const btn = document.getElementById("send-btn");
+            if(isLoading) {
+                btn.innerHTML = "..."; 
+                btn.disabled = true;
+                btn.style.opacity = 0.5;
+            } else {
+                btn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>';
+                btn.disabled = false;
+                btn.style.opacity = 1;
+            }
+        }
+        function containsJapanese(text) { return /[\u3040-\u309F\u30A0-\u30FF]/.test(text); }
+        function markdownToHtml(text) {
+            let html = text.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>').replace(/^\s*-\s+(.*)$/gm, '<li>$1</li>');
+            if (html.includes('<li>')) html = '<ul>' + html + '</ul>';
+            return html;
+        }
+    });
+</script>
+</body>
+</html>
