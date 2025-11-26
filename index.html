@@ -13,7 +13,6 @@
             --sub-text: #9ca0a6;
             --input-bg: #1e1f20;
             --accent-color: #ffffff;
-            --btn-hover: #333;
         }
 
         body {
@@ -106,24 +105,18 @@
         }
         .note-title { font-size: 12px; color: #888; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; font-weight: bold; }
 
-        /* 功能按鈕區 - 改為固定高度，避免跳動 */
         #action-buttons {
-            display: flex; /* 常駐顯示，預設 flex */
+            display: flex;
             padding: 0 20px 10px 20px;
             gap: 10px;
             justify-content: flex-start;
             overflow-x: auto;
-            min-height: 40px; /* 預留高度 */
-            opacity: 0; /* 初始隱藏，有日文時才顯示 */
+            min-height: 40px;
+            opacity: 0;
             transition: opacity 0.3s;
-            pointer-events: none; /* 隱藏時不可點擊 */
+            pointer-events: none;
         }
-        
-        /* 當有日文時的狀態 class */
-        #action-buttons.visible {
-            opacity: 1;
-            pointer-events: auto;
-        }
+        #action-buttons.visible { opacity: 1; pointer-events: auto; }
 
         .action-btn {
             padding: 8px 16px;
@@ -244,7 +237,8 @@
         <div class="ai-label">AI</div>
         <div class="message ai-bubble">
             歡迎使用。<br>
-            輸入中文或日文，我會自動判斷並提供文法輔助。
+            輸入中文 ➡ 日文 (有禮貌)<br>
+            輸入日文 ➡ 中文 (台灣口語)
         </div>
     </div>
 </div>
@@ -278,7 +272,7 @@
 
     document.addEventListener('DOMContentLoaded', function() {
         let apiKey = "";
-        let lastJapaneseText = ""; // 儲存「最新出現的日文句子」
+        let lastJapaneseText = ""; 
         
         const MODEL_NAME = "llama-3.3-70b-versatile"; 
 
@@ -322,81 +316,64 @@
 
             addMessage(text, "user");
             messageInput.value = "";
-            
-            // 狀態變更：傳送中，暫時停用按鈕，但不隱藏
             toggleActionButtons(false); 
             loading(true);
 
-            // 🌟 邏輯修正：如果使用者輸入的是日文，先記錄下來
+            // 若輸入為日文，先儲存供按鈕使用
             if (containsJapanese(text)) {
                 lastJapaneseText = text;
-                updateActionButtonsState(); // 立即啟用按鈕
+                updateActionButtonsState();
             }
 
+            // 🌟 修正後的 System Prompt：強調雙向邏輯 🌟
             const systemPrompt = `
-你是一個專業的中日口譯員。
+你是一個專業的中日口譯員。請嚴格遵守以下規則：
 
-【核心指令】
-將對話翻譯成「有禮貌、成熟且自然的口語（丁寧語）」。
+1. **語言方向判斷**：
+   - 若使用者輸入【中文】：請翻譯成「有禮貌、自然的日文口語 (丁寧語/Desu-Masu)」。
+   - 若使用者輸入【日文】：請翻譯成「繁體中文 (台灣口語)」。
 
-【重要：語氣控制】
-1. **禁止濫用「ね (ne)」**：
-   - 不要每一句話結尾都加「ね」。請多使用「～ます」、「～です」、「～ますよ」或斷定句。
-2. **有禮貌的距離感**：
-   - 使用 Desu/Masu 形 (丁寧語)。
-   - 避免太隨便的タメ口。
+2. **日文語氣控制 (針對中翻日)**：
+   - **禁止濫用「ね (ne)」**：不要每句結尾都加「ね」。請混合使用「～ます」、「～です」、「～ますよ」或斷定句。
+   - 保持成年人的禮貌距離感，避免過於幼稚或過於隨便。
 
-【輸出規則】
-- 只回傳翻譯結果，不要解釋。
+3. **輸出規則**：
+   - 只回傳翻譯結果，不要任何解釋。
             `;
             
             const result = await callGroqAPI(systemPrompt, text);
             loading(false);
-            
-            // 恢復按鈕可點擊狀態
             toggleActionButtons(true);
 
             if (result) {
                 addMessage(result, "ai");
-                // 🌟 邏輯修正：如果 AI 回傳的是日文，覆蓋最新的日文紀錄
+                // 若翻譯結果為日文 (中翻日)，儲存供按鈕使用
                 if (containsJapanese(result)) {
                     lastJapaneseText = result;
                 }
-                // 更新按鈕顯示狀態 (只要 lastJapaneseText 有值就顯示)
                 updateActionButtonsState();
             }
         }
 
         async function requestFurigana() {
             if (!lastJapaneseText) return;
-            
-            // 僅暫時停用，不隱藏
             toggleActionButtons(false);
-            
-            // 在對話中插入一個 Loading 指示
             const loadingId = addLoadingNote("假名標註中...");
-            
             const prompt = `請將這句日文標註假名 (Furigana)，格式使用括號，例如：私(わたし)。句子：${lastJapaneseText}`;
             const result = await callGroqAPI("你是一個日文老師。", prompt);
-            
             removeLoadingNote(loadingId);
             toggleActionButtons(true);
-
             if (result) addNote("假名標註", result);
         }
 
         async function requestGrammar() {
             if (!lastJapaneseText) return;
-            
             toggleActionButtons(false);
             const loadingId = addLoadingNote("文法分析中...");
-            
             const prompt = `請以繁體中文，簡單扼要地解說這句日文的文法重點與語氣。句子：${lastJapaneseText}`;
             const result = await callGroqAPI("你是一個日文老師。", prompt);
-            
             removeLoadingNote(loadingId);
             toggleActionButtons(true);
-            
             if (result) addNote("文法解說", markdownToHtml(result));
         }
 
@@ -459,7 +436,6 @@
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
         
-        // 增加一個暫時的 Loading 訊息，體驗更好
         function addLoadingNote(text) {
             const id = "loading-" + Date.now();
             const row = document.createElement("div");
@@ -480,7 +456,6 @@
             if(el) el.remove();
         }
 
-        // 控制按鈕顯示與否
         function updateActionButtonsState() {
             if (lastJapaneseText) {
                 actionButtons.classList.add("visible");
@@ -489,7 +464,6 @@
             }
         }
 
-        // 控制按鈕是否可點擊 (防止連點)
         function toggleActionButtons(enable) {
             btnFurigana.disabled = !enable;
             btnGrammar.disabled = !enable;
