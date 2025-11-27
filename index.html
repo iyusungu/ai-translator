@@ -44,7 +44,7 @@
         #menu-btn svg { width: 24px; height: 24px; fill: currentColor; }
         #header-info { display: flex; flex-direction: column; }
         #app-title { font-size: 16px; font-weight: 600; letter-spacing: 0.5px; }
-        #model-indicator { font-size: 10px; color: var(--accent-color); margin-top: 2px; font-family: monospace; }
+        #model-indicator { font-size: 10px; color: var(--accent-color); margin-top: 2px; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px; }
         #api-key-btn { font-size: 12px; background: transparent; border: 1px solid #555; color: var(--sub-text); padding: 4px 10px; border-radius: 12px; cursor: pointer; }
 
         /* Sidebar */
@@ -249,6 +249,10 @@
     let currentModelDisplayName = ""; 
     let forcedModel = ""; // User selected forced model
     
+    // --- Monitoring Stats ---
+    let requestCount = 0;
+    let totalTokens = 0;
+    
     // Chat State
     let chatMode = "casual";
     let customPrompt = "";
@@ -340,6 +344,9 @@
         modelSelector.addEventListener('change', (e) => {
             forcedModel = e.target.value;
             currentModel = ""; // Reset current
+            // Reset counters on model switch
+            requestCount = 0;
+            totalTokens = 0;
             detectBestModel(); // Re-detect (will prioritize forced)
         });
 
@@ -360,8 +367,11 @@
 
         window.setStrategy = function(strategy) {
             modelStrategy = strategy;
-            // Disable forced model if strategy clicked (optional UX choice, keeping forced is also valid)
-            // Let's keep forced model if selected, otherwise switch strategy
+            
+            // Reset counters when strategy changes
+            requestCount = 0;
+            totalTokens = 0;
+
             if (!forcedModel) {
                 currentModel = ""; 
                 detectBestModel();
@@ -417,13 +427,15 @@
         }
 
         function updateModelIndicator() {
+            const stats = ` | Req: ${requestCount} | Tok: ${totalTokens}`;
+            
             if (forcedModel) {
-                modelIndicator.innerText = `強制指定 (${forcedModel})`;
+                modelIndicator.innerText = `強制指定 (${forcedModel})${stats}`;
                 return;
             }
             const strategyName = modelStrategy === 'speed' ? '即時' : '專業';
             const detail = currentModelDisplayName ? ` (${currentModelDisplayName})` : " (偵測中...)";
-            modelIndicator.innerText = `${strategyName}${detail}`;
+            modelIndicator.innerText = `${strategyName}${detail}${stats}`;
         }
 
         // --- Model Detection ---
@@ -574,6 +586,14 @@
                 });
                 const data = await res.json();
                 if(data.error) { alert(data.error.message); return null; }
+                
+                // Monitoring Update
+                requestCount++;
+                if (data.usageMetadata && data.usageMetadata.totalTokenCount) {
+                    totalTokens += data.usageMetadata.totalTokenCount;
+                }
+                updateModelIndicator();
+
                 return data.candidates[0].content.parts[0].text;
             } catch(e) { alert("Connection Error"); return null; }
         }
